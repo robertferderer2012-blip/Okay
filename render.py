@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
 """
 Affe isst Steak mit Pommes  -  ASMR
-Procedurally rendered 1080p/30fps short with synthesized ASMR audio.
+Procedurally rendered 1080x1920 (9:16) / 30fps short with synthesized ASMR audio.
 
-    python3 render.py            -> affe_steak_pommes_asmr.mp4
+    python3 render.py            -> affe_steak_pommes_asmr_hochformat.mp4
     python3 render.py --frame 4.6  -> single preview frame (png)
 """
 import math, os, sys, subprocess, wave
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-W, H = 1920, 1080
-S = 2                      # supersampling factor (scene is rendered at 4K)
-RW, RH = W * S, H * S
+W, H = 1080, 1920          # portrait 9:16
+S = 2                      # supersampling factor
+# world-space extent of the pre-rendered scene canvas
+CX0, CY0, CX1, CY1 = 400, -420, 1520, 1520
+RW, RH = (CX1 - CX0) * S, (CY1 - CY0) * S
+BUILD_OFF = (CX0, CY0)
 FPS = 30
-DUR = 24.0
+DUR = 40.0
 NF = int(FPS * DUR)
-OUT = "affe_steak_pommes_asmr.mp4"
+OUT = "affe_steak_pommes_asmr_hochformat.mp4"
 
 # ----------------------------------------------------------------------------
 # small helpers
@@ -42,16 +45,16 @@ def ramp(t, a, b):
     """0 before a, 1 after b, smooth between"""
     return smooth((t - a) / (b - a))
 
-def ell(d, cx, cy, rx, ry, fill, off=(0, 0), s=S):
-    ox, oy = off
+def ell(d, cx, cy, rx, ry, fill, off=None, s=S):
+    ox, oy = off if off is not None else BUILD_OFF
     d.ellipse([(cx - rx - ox) * s, (cy - ry - oy) * s, (cx + rx - ox) * s, (cy + ry - oy) * s], fill=fill)
 
-def poly(d, pts, fill, off=(0, 0), s=S):
-    ox, oy = off
+def poly(d, pts, fill, off=None, s=S):
+    ox, oy = off if off is not None else BUILD_OFF
     d.polygon([((x - ox) * s, (y - oy) * s) for x, y in pts], fill=fill)
 
-def pline(d, pts, fill, w, off=(0, 0), s=S):
-    ox, oy = off
+def pline(d, pts, fill, w, off=None, s=S):
+    ox, oy = off if off is not None else BUILD_OFF
     d.line([((x - ox) * s, (y - oy) * s) for x, y in pts], fill=fill, width=max(1, int(round(w * s))), joint="curve")
 
 def shade(c, f):
@@ -61,12 +64,13 @@ def shade(c, f):
 # scene layout (world coordinates, 1920x1080)
 # ----------------------------------------------------------------------------
 TABLE_Y = 700
+TABLE_FRONT = 1330
 PLATE = (960, 878, 410, 128)            # cx, cy, rx, ry
 HEAD0 = (960, 425)
 SHOULDER_L = (765, 655)
 SHOULDER_R = (1155, 655)
-REST_L = (470, 935)
-REST_R = (1450, 935)
+REST_L = (585, 1035)
+REST_R = (1335, 1035)
 FUR = (78, 50, 33)
 FUR_DARK = (44, 27, 18)
 FUR_LIGHT = (128, 86, 56)
@@ -96,12 +100,14 @@ def make_fries():
         dict(c=(1135, 872), a=math.radians(196), L=150, w=23, seed=101),
         dict(c=(1215, 846), a=math.radians(160), L=146, w=22, seed=202),
         dict(c=(1165, 905), a=math.radians(186), L=154, w=23, seed=303),
+        dict(c=(1250, 884), a=math.radians(170), L=148, w=22, seed=404),
+        dict(c=(1105, 838), a=math.radians(200), L=142, w=22, seed=505),
     ]
     return fries, hero
 
 FRIES, HERO = make_fries()
 
-def draw_fry(d, c, a, L, wd, seed, bitten=False, shadow=True, off=(0, 0)):
+def draw_fry(d, c, a, L, wd, seed, bitten=False, shadow=True, off=None):
     if L < 4:
         return
     r = np.random.default_rng(seed)
@@ -177,15 +183,16 @@ def make_piece_sprite(frac=1.0):
             pts.append((lerp(x0, x1, t), y1 - inset + r.uniform(-1.5, 1.5)))
         pts += [(x0 + inset, y1 - 10), (x0 + inset - 2, c), (x0 + inset, y0 + 10)]
         return pts
-    poly(d, shape(0), (62, 30, 14, 255))          # crust
-    poly(d, shape(7), (120, 70, 52, 255))          # grey-brown band
-    poly(d, shape(13), (170, 72, 70, 255))         # pink
-    poly(d, shape(20), (196, 82, 84, 255))         # deep pink centre
+    Z = (0, 0)
+    poly(d, shape(0), (62, 30, 14, 255), Z)          # crust
+    poly(d, shape(7), (120, 70, 52, 255), Z)          # grey-brown band
+    poly(d, shape(13), (170, 72, 70, 255), Z)         # pink
+    poly(d, shape(20), (196, 82, 84, 255), Z)         # deep pink centre
     # fibres + juice gloss
     for k in range(10):
         xx = lerp(x0 + 16, x1 - 14, k / 9)
-        pline(d, [(xx, y0 + 16), (xx + 6, y1 - 16)], (150, 60, 58, 255), 1.2)
-    pline(d, [(x0 + 22, y0 + 18), (lerp(x0, x1, 0.7), y0 + 15)], (255, 190, 180, 255), 2.5)
+        pline(d, [(xx, y0 + 16), (xx + 6, y1 - 16)], (150, 60, 58, 255), 1.2, Z)
+    pline(d, [(x0 + 22, y0 + 18), (lerp(x0, x1, 0.7), y0 + 15)], (255, 190, 180, 255), 2.5, Z)
     im = im.filter(ImageFilter.GaussianBlur(1.0))
     return im
 
@@ -198,13 +205,12 @@ def paste_piece(frame, sprite, c, a, off):
     y = int(round((c[1] - off[1]) * S - rot.height / 2))
     frame.paste(rot, (x, y), rot)
 
-PIECE_POS = (1000, 918)
-PIECE_ANG = math.radians(-8)
+PIECES = [((1000, 912), math.radians(-8)), ((1018, 966), math.radians(5))]
 
 # ----------------------------------------------------------------------------
 # static background: room, bokeh, monkey body, table, plate, steak, fries
 # ----------------------------------------------------------------------------
-def fur_strokes(d, cx, cy, rx, ry, n, base, seed, off=(0, 0), s=S, edge_only=False):
+def fur_strokes(d, cx, cy, rx, ry, n, base, seed, off=None, s=S, edge_only=False):
     r = np.random.default_rng(seed)
     for i in range(n):
         th = r.uniform(0, 2 * math.pi)
@@ -219,21 +225,22 @@ def fur_strokes(d, cx, cy, rx, ry, n, base, seed, off=(0, 0), s=S, edge_only=Fal
 
 def build_background():
     yy, xx = np.mgrid[0:RH, 0:RW].astype(np.float32) / S
+    xx += CX0; yy += CY0
     img = np.zeros((RH, RW, 3), np.float32)
     # dark warm room with spotlight glow
-    t = yy / H
+    t = (yy - CY0) / (CY1 - CY0)
     top = np.array([34, 22, 16], np.float32)
     bot = np.array([16, 10, 7], np.float32)
     img[:] = top * (1 - t[..., None]) + bot * t[..., None]
-    g = np.exp(-(((xx - 940) / 760) ** 2 + ((yy - 300) / 520) ** 2))
+    g = np.exp(-(((xx - 940) / 700) ** 2 + ((yy - 250) / 700) ** 2))
     img += g[..., None] * np.array([70, 44, 26], np.float32)
     # bokeh lights (low res, blurred)
-    bk = Image.new("RGB", (W // 4, H // 4), (0, 0, 0))
+    bk = Image.new("RGB", (RW // 8, RH // 8), (0, 0, 0))
     bd = ImageDraw.Draw(bk, "RGBA")
     r = np.random.default_rng(3)
-    for i in range(26):
-        x = r.uniform(0, W / 4); y = r.uniform(10, TABLE_Y / 4 - 20)
-        if abs(x - W / 8) < 70 and y > 40:
+    for i in range(34):
+        x = r.uniform(0, RW / 8); y = r.uniform(10, (TABLE_Y - CY0) / 4 - 20)
+        if abs(x - (960 - CX0) / 4) < 60 and 0.45 * (TABLE_Y - CY0) / 4 < y:
             continue
         rad = r.uniform(8, 26)
         col = [(255, 170, 80), (255, 200, 120), (255, 140, 60), (230, 190, 150)][int(r.integers(4))]
@@ -271,7 +278,7 @@ def build_background():
     fine = np.asarray(Image.fromarray((r2.random((RH // 2, RW // 8)) * 255).astype(np.uint8)).resize((RW, RH), Image.BICUBIC), np.float32) / 255
     wood = np.array([92, 54, 32], np.float32)
     wc = wood[None, None, :] * (0.6 + 0.45 * grain[..., None] + 0.08 * (fine[..., None] - 0.5))
-    depth = np.clip((yy - TABLE_Y) / (H - TABLE_Y), 0, 1)
+    depth = np.clip((yy - TABLE_Y) / (TABLE_FRONT - TABLE_Y), 0, 1)
     wc *= (0.72 + 0.4 * depth)[..., None]
     spec = np.exp(-(((xx - 980) / 650) ** 2 + ((yy - 780) / 110) ** 2))
     wc += spec[..., None] * np.array([90, 60, 38], np.float32)
@@ -279,7 +286,16 @@ def build_background():
     sh = np.exp(-np.maximum(yy - TABLE_Y, 0) / 55) * np.exp(-((xx - 960) / 360) ** 6)
     wc *= (1 - 0.6 * sh)[..., None]
     # front edge falloff
-    wc *= (1 - 0.35 * np.clip((yy - 1000) / 80, 0, 1))[..., None]
+    wc *= (1 - 0.25 * np.clip((yy - 1150) / 100, 0, 1))[..., None]
+    # front edge (rounded lip) + apron + dark floor below
+    lip = np.exp(-((yy - TABLE_FRONT - 4) / 4) ** 2)
+    wc += lip[..., None] * np.array([90, 60, 38], np.float32)
+    apron = (yy > TABLE_FRONT + 6)
+    ap = wood * (0.42 - 0.22 * np.clip((yy - TABLE_FRONT) / 90, 0, 1))[..., None] * (0.8 + 0.3 * streak2[..., None])
+    wc = np.where(apron[..., None], ap, wc)
+    below = np.clip((yy - TABLE_FRONT - 90) / 4, 0, 1)
+    floor = np.array([14, 9, 6], np.float32) * (1 - 0.5 * np.clip((yy - TABLE_FRONT - 90) / 200, 0, 1))[..., None]
+    wc = wc * (1 - below[..., None]) + floor * below[..., None]
     m = np.clip(yy - TABLE_Y + 0.5, 0, 1)[..., None]
     tb = tb * (1 - m) + wc * m
     # table top edge highlight
@@ -292,14 +308,15 @@ def build_background():
     shl = Image.new("L", (RW // 4, RH // 4), 0)
     sd = ImageDraw.Draw(shl)
     cx, cy, rx, ry = PLATE
-    sd.ellipse([(cx - rx + 10) / 2, (cy - ry + 24) / 2, (cx + rx + 30) / 2, (cy + ry + 34) / 2], fill=170)
+    sd.ellipse([(cx - rx + 10 - CX0) / 2, (cy - ry + 24 - CY0) / 2, (cx + rx + 30 - CX0) / 2, (cy + ry + 34 - CY0) / 2], fill=170)
     shl = shl.filter(ImageFilter.GaussianBlur(14)).resize((RW, RH), Image.BICUBIC)
     base.paste(Image.new("RGB", (RW, RH), (8, 4, 2)), (0, 0), shl)
 
     # ---- plate (numpy, analytic ellipse)
-    bx0, bx1 = int((cx - rx - 4) * S), int((cx + rx + 4) * S)
-    by0, by1 = int((cy - ry - 4) * S), int((cy + ry + 4) * S)
+    bx0, bx1 = int((cx - rx - 4 - CX0) * S), int((cx + rx + 4 - CX0) * S)
+    by0, by1 = int((cy - ry - 4 - CY0) * S), int((cy + ry + 4 - CY0) * S)
     py, px = np.mgrid[by0:by1, bx0:bx1].astype(np.float32) / S
+    px += CX0; py += CY0
     e = np.sqrt(((px - cx) / rx) ** 2 + ((py - cy) / ry) ** 2)
     ang = np.arctan2((py - cy) / ry, (px - cx) / rx)
     pa = np.asarray(base, np.float32)[by0:by1, bx0:bx1].copy()
@@ -342,7 +359,7 @@ def build_background():
         pts.append((min(x, steak_c[0] + srx * 0.93), y))     # flat cut end on the right
     # shadow + juice
     sl = Image.new("L", (RW // 4, RH // 4), 0)
-    ImageDraw.Draw(sl).polygon([((x + 8) * S / 4, (y + 22) * S / 4) for x, y in pts], fill=200)
+    ImageDraw.Draw(sl).polygon([((x + 8 - CX0) * S / 4, (y + 22 - CY0) * S / 4) for x, y in pts], fill=200)
     sl = sl.filter(ImageFilter.GaussianBlur(6)).resize((RW, RH), Image.BICUBIC)
     base.paste(Image.new("RGB", (RW, RH), (60, 35, 25)), (0, 0), sl)
     d = ImageDraw.Draw(base, "RGBA")
@@ -353,13 +370,13 @@ def build_background():
     poly(d, [(x, y + 11) for x, y in pts], (82, 40, 20, 255))
     # top surface texture via mask
     mask = Image.new("L", (RW, RH), 0)
-    ImageDraw.Draw(mask).polygon([(x * S, y * S) for x, y in pts], fill=255)
+    ImageDraw.Draw(mask).polygon([((x - CX0) * S, (y - CY0) * S) for x, y in pts], fill=255)
     tex = Image.new("RGB", (RW, RH), (0, 0, 0))
-    bb = (int((steak_c[0] - srx * 1.2) * S), int((steak_c[1] - sry * 1.3) * S),
-          int((steak_c[0] + srx * 1.2) * S), int((steak_c[1] + sry * 1.4) * S))
+    bb = (int((steak_c[0] - srx * 1.2 - CX0) * S), int((steak_c[1] - sry * 1.3 - CY0) * S),
+          int((steak_c[0] + srx * 1.2 - CX0) * S), int((steak_c[1] + sry * 1.4 - CY0) * S))
     tw, th_ = bb[2] - bb[0], bb[3] - bb[1]
     ty, tx = np.mgrid[0:th_, 0:tw].astype(np.float32) / S
-    tx += bb[0] / S; ty += bb[1] / S
+    tx += bb[0] / S + CX0; ty += bb[1] / S + CY0
     n1 = np.asarray(Image.fromarray((rr.random((th_ // 10, tw // 10)) * 255).astype(np.uint8)).resize((tw, th_), Image.BICUBIC), np.float32) / 255
     n2 = np.asarray(Image.fromarray((rr.random((th_ // 3, tw // 3)) * 255).astype(np.uint8)).resize((tw, th_), Image.BICUBIC), np.float32) / 255
     crust = np.array([128, 66, 30], np.float32)
@@ -404,10 +421,10 @@ def build_background():
         ell(d, x, y - 4, 1.2, 1.2, (25, 15, 10, 255))   # cracked pepper
 
     # ketchup / pepper sauce dollop
-    ell(d, 905, 958, 46, 17, (90, 15, 10, 255))
-    ell(d, 905, 955, 42, 14, (170, 28, 18, 255))
-    ell(d, 897, 950, 22, 6, (230, 90, 70, 255))
-    ell(d, 893, 949, 8, 2.5, (255, 200, 190, 255))
+    ell(d, 880, 966, 46, 17, (90, 15, 10, 255))
+    ell(d, 880, 963, 42, 14, (170, 28, 18, 255))
+    ell(d, 872, 958, 22, 6, (230, 90, 70, 255))
+    ell(d, 868, 957, 8, 2.5, (255, 200, 190, 255))
 
     # ---- fries pile (non-hero fries)
     for f in FRIES:
@@ -477,9 +494,13 @@ def build_head():
 EVENTS = [
     dict(kind="fry", arm="R", t0=1.5, hero=0),
     dict(kind="fry", arm="R", t0=6.1, hero=1),
-    dict(kind="steak", arm="L", t0=10.7),
+    dict(kind="steak", arm="L", t0=10.7, piece=0),
     dict(kind="fry", arm="R", t0=15.6, hero=2),
+    dict(kind="steak", arm="L", t0=20.2, piece=1),
+    dict(kind="fry", arm="R", t0=25.4, hero=3),
+    dict(kind="fry", arm="R", t0=30.0, hero=4),
 ]
+END_T = 36.0
 for ev in EVENTS:
     t0 = ev["t0"]
     ev["open1"] = t0 + 1.45
@@ -538,14 +559,14 @@ def head_at(t):
         hx += side * 10 * lean
     hy += jaw_at(t) * 0.35
     # happy end: little head tilt and nod
-    hy += 8 * ramp(t, 20.6, 21.6)
+    hy += 8 * ramp(t, END_T + 0.1, END_T + 1.1)
     return hx, hy
 
 def mouth_pos(t):
     hx, hy = head_at(t)
     return (hx, hy + 100)
 
-BLINKS = [0.8, 4.9, 9.2, 14.3, 19.4]
+BLINKS = [0.8, 4.9, 9.2, 14.3, 19.0, 23.9, 28.6, 33.4]
 
 def eye_close_at(t):
     c = 0.0
@@ -555,7 +576,7 @@ def eye_close_at(t):
     for ev in EVENTS:
         for bt in (ev["bite1"], ev["bite2"]):
             c = max(c, 0.85 * max(0, 1 - abs(t - bt - 0.05) / 0.25))
-    c = max(c, ramp(t, 20.5, 21.0))
+    c = max(c, ramp(t, END_T, END_T + 0.5))
     return clamp(c)
 
 # per-arm hand / item state ---------------------------------------------------
@@ -566,9 +587,10 @@ def item_grip_on_plate(ev):
         f = HERO[ev["hero"]]
         u = (math.cos(f["a"]), math.sin(f["a"]))
         return (f["c"][0] - u[0] * (f["L"] / 2 - 18), f["c"][1] - u[1] * (f["L"] / 2 - 18)), f["a"]
-    u = (math.cos(PIECE_ANG + math.pi), math.sin(PIECE_ANG + math.pi))
+    pp, pa = PIECES[ev["piece"]]
+    u = (math.cos(pa + math.pi), math.sin(pa + math.pi))
     # grip the right end of the piece; piece points left (toward centre)
-    return (PIECE_POS[0] - u[0] * 45, PIECE_POS[1] - u[1] * 45), PIECE_ANG + math.pi
+    return (pp[0] - u[0] * 45, pp[1] - u[1] * 45), pa + math.pi
 
 def item_len(ev, t):
     """fry length / piece fraction currently held"""
@@ -846,7 +868,7 @@ def draw_face(d, t, off):
     ell(d, mx, my + 14 + drop, 50, 10, shade(SKIN, lf * 0.82) + (255,), off)
     ell(d, mx, my + 30 + drop, 30, 9, shade(SKIN, lf * 1.08) + (255,), off)
     if drop <= 1.5:
-        smile = 6 + 6 * ramp(t, 20.4, 21.2)
+        smile = 6 + 6 * ramp(t, END_T - 0.1, END_T + 0.7)
         pts = [(mx + x, my + 2 + smile * (1 - (x / 50) ** 2)) for x in np.linspace(-50, 50, 20)]
         pline(d, pts, (70, 38, 28, 255), 3.6, off)
     else:
@@ -861,8 +883,8 @@ def draw_face(d, t, off):
 # ----------------------------------------------------------------------------
 # steam (low-res layer)
 # ----------------------------------------------------------------------------
-def steam_layer(t, off, zoom):
-    sw, sh = W // 2, H // 2
+def steam_layer(t, off, vw, vh):
+    sw, sh = int(vw / 2), int(vh / 2)
     lay = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
     d = ImageDraw.Draw(lay, "RGBA")
     k = 0.5
@@ -886,9 +908,9 @@ def steam_layer(t, off, zoom):
 # camera + post
 # ----------------------------------------------------------------------------
 def camera(t):
-    z = 1.0 + 0.2 * smooth(t / 21.0)
+    z = 1.0 + 0.16 * smooth(t / (DUR - 4))
     cx = 960 + 6 * math.sin(t * 0.37)
-    cy = lerp(540, 590, smooth(t / 21.0)) + 4 * math.sin(t * 0.29 + 1)
+    cy = lerp(608, 640, smooth(t / (DUR - 4))) + 4 * math.sin(t * 0.29 + 1)
     # micro "handheld" drift
     cx += 2.0 * math.sin(t * 1.7) ; cy += 1.5 * math.sin(t * 2.3)
     return z, cx, cy
@@ -944,11 +966,11 @@ def init():
 def render_frame(fi):
     t = fi / FPS
     z, ccx, ccy = camera(t)
-    vw, vh = W / z, H / z
+    vw, vh = 1000 / z, 1000 * H / W / z
     x0, y0 = ccx - vw / 2, ccy - vh / 2
     # render only the visible window of the 4K scene, at S x output resolution
-    box = (int(x0 * S), int(y0 * S), int((x0 + vw) * S), int((y0 + vh) * S))
-    off = (box[0] / S, box[1] / S)
+    box = (int((x0 - CX0) * S), int((y0 - CY0) * S), int((x0 + vw - CX0) * S), int((y0 + vh - CY0) * S))
+    off = (box[0] / S + CX0, box[1] / S + CY0)
     frame = BASE.crop(box)
     # head
     hx, hy = head_at(t)
@@ -963,8 +985,9 @@ def render_frame(fi):
             draw_fry(d, f["c"], f["a"], f["L"], f["w"], f["seed"], off=off)
         if ev["kind"] == "steak" and item_on_plate(ev, t):
             # shadow + piece
-            ell(d, PIECE_POS[0] + 6, PIECE_POS[1] + 14, 62, 26, (40, 20, 10, 90), off)
-            paste_piece(frame, PIECE_FULL, PIECE_POS, PIECE_ANG, off)
+            pp, pa = PIECES[ev["piece"]]
+            ell(d, pp[0] + 6, pp[1] + 14, 62, 26, (40, 20, 10, 90), off)
+            paste_piece(frame, PIECE_FULL, pp, pa, off)
             d = ImageDraw.Draw(frame, "RGBA")
     draw_crumbs(d, t, off)
     # hand shadows on the table
@@ -979,12 +1002,11 @@ def render_frame(fi):
         st = arm_state(arm, t)
         d = draw_arm(frame, d, arm, st, off, t)
     # steam
-    st_l = steam_layer(t, off, z)
+    st_l = steam_layer(t, off, vw, vh)
     st_l = st_l.resize(frame.size, Image.BILINEAR)
     frame.paste(st_l, (0, 0), st_l)
     out = frame.resize((W, H), Image.LANCZOS)
     out = post(out, t, fi)
-    out = overlay_text(out, t)
     return out.tobytes()
 
 # ----------------------------------------------------------------------------
@@ -1110,7 +1132,7 @@ def build_audio(path):
                 m.squish(tc - 0.04, 0.9 * inten + 0.3, 0.22)
             k += 1
     # final contented "mmh" hum (soft voiced tone)
-    th0 = 21.3
+    th0 = END_T + 0.3
     nn = int(SR * 1.1)
     tt2 = np.arange(nn) / SR
     f0 = 150 - 12 * tt2
