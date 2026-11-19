@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """Mixes the ElevenLabs voiceover with a synthesized beat + SFX, then muxes with the rendered video.
 
-    python3 mix.py [voice.mp3]   -> money_10k_1month.mp4
+    python3 mix.py [voice.mp3] [cues.json]
+cues.json: {"end", "whoosh": [...], "kaching": [...], "pop": [...], "click": [...], "build": dir, "out": file}
 """
-import subprocess, sys, wave
+import json, subprocess, sys, wave
 import numpy as np
 
 SR = 44100
-END = 58.2
 VOICE = sys.argv[1] if len(sys.argv) > 1 else 'audio/take2.mp3'
+CUES = json.load(open(sys.argv[2])) if len(sys.argv) > 2 else {
+    "end": 58.2, "whoosh": [5.04, 13.0, 19.97, 27.8, 39.47, 46.4, 51.72], "kaching": [0.15, 7.96, 26.21, 44.4, 55.2],
+    "pop": [16.6, 17.55, 18.55, 23.2, 35.85, 41.9, 42.11, 42.32, 42.53, 42.74, 42.95, 43.16, 43.37, 43.58, 43.79, 49.6, 50.3, 51.0],
+    "click": [], "build": "build", "out": "money_10k_1month.mp4"}
+END = CUES["end"]
 N = int(END * SR)
 rng = np.random.default_rng(7)
 
@@ -80,12 +85,20 @@ def pop():
     n = int(0.09 * SR); tt = np.arange(n) / SR
     return (np.sin(2 * np.pi * (900 - 4000 * tt) * tt) * env(n, 0.001, 0.03) * 0.25).astype(np.float32)
 
-for ts in [5.04, 13.0, 19.97, 27.8, 39.47, 46.4, 51.72]:
+def shutter():
+    n = int(0.12 * SR); x = rng.standard_normal(n).astype(np.float32)
+    e = np.zeros(n); a = int(0.012 * SR); b = int(0.06 * SR)
+    e[:a] = np.exp(-np.arange(a) / (0.003 * SR)); e[b:b + a] = 0.7 * np.exp(-np.arange(a) / (0.004 * SR))
+    return (x * e * 0.5).astype(np.float32)
+
+for ts in CUES["whoosh"]:
     add(sfx, 0.35 * whoosh(), ts - 0.3)
-for ts in [0.15, 7.96, 26.21, 44.4, 55.2]:
+for ts in CUES["kaching"]:
     add(sfx, kaching(), ts)
-for ts in [16.6, 17.55, 18.55, 23.2, 35.85, 41.9, 42.11, 42.32, 42.53, 42.74, 42.95, 43.16, 43.37, 43.58, 43.79, 49.6, 50.3, 51.0]:
+for ts in CUES["pop"]:
     add(sfx, pop(), ts)
+for ts in CUES.get("click", []):
+    add(sfx, shutter(), ts)
 
 # --- duck music under the voice
 venv = np.abs(voice)
@@ -99,11 +112,12 @@ fade = np.ones(N); fn = int(0.5 * SR); fade[-fn:] = np.linspace(1, 0, fn)
 mix *= fade
 mix /= max(1.0, np.abs(mix).max() / 0.95)
 
-with wave.open('build/mix.wav', 'wb') as w:
+BUILD = CUES["build"]
+with wave.open(f'{BUILD}/mix.wav', 'wb') as w:
     w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR)
     w.writeframes((mix * 32767).astype(np.int16).tobytes())
 
-subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', 'build/silent.mp4', '-i', 'build/mix.wav',
+subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', f'{BUILD}/silent.mp4', '-i', f'{BUILD}/mix.wav',
                 '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-af', 'loudnorm=I=-14:TP=-1.5:LRA=11',
-                '-shortest', '-movflags', '+faststart', 'money_10k_1month.mp4'], check=True)
-print('wrote money_10k_1month.mp4')
+                '-shortest', '-movflags', '+faststart', CUES["out"]], check=True)
+print('wrote', CUES["out"])

@@ -2,3 +2,4 @@ __pycache__/
 money3d/node_modules/
 money3d/build/
 money3d/previews/
+money3d/build_*/

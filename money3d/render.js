@@ -11,6 +11,8 @@ const { chromium } = require('playwright');
 const ROOT = __dirname;
 const FPS = 30;
 const WORKERS = parseInt(process.env.WORKERS || '3', 10);
+const PAGE = process.env.PAGE || 'scene.html';
+const BUILD = process.env.BUILD || 'build';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.woff2': 'font/woff2', '.woff': 'font/woff' };
 
 function serve() {
@@ -29,7 +31,7 @@ async function openPage(browser, port) {
   const page = await browser.newPage({ viewport: { width: 1080, height: 1920 } });
   page.on('pageerror', (e) => console.error('pageerror', e.message));
   page.on('console', (m) => { if (m.type() === 'error') console.error('console', m.text()); });
-  await page.goto(`http://127.0.0.1:${port}/scene.html`);
+  await page.goto(`http://127.0.0.1:${port}/${PAGE}`);
   await page.waitForFunction(() => window.READY || window.ERR, null, { timeout: 120000 });
   const err = await page.evaluate(() => window.ERR);
   if (err) throw new Error(err);
@@ -47,11 +49,14 @@ const frame = async (page, t) => Buffer.from((await page.evaluate((t) => window.
     const page = await openPage(browser, port);
     for (const t of args.slice(1)) {
       const t0 = Date.now();
-      fs.writeFileSync(path.join(ROOT, 'previews', `preview_${t}.jpg`), await frame(page, parseFloat(t)));
+      fs.writeFileSync(path.join(ROOT, 'previews', `${path.basename(PAGE, '.html')}_${t}.jpg`), await frame(page, parseFloat(t)));
       console.log('frame', t, Date.now() - t0, 'ms');
     }
   } else {
-    const END = 58.2;
+    fs.mkdirSync(path.join(ROOT, BUILD), { recursive: true });
+    const probe = await openPage(browser, port);
+    const END = await probe.evaluate(() => window.END);
+    await probe.close();
     const N = Math.round(END * FPS);
     const per = Math.ceil(N / WORKERS);
     const tStart = Date.now();
@@ -60,7 +65,7 @@ const frame = async (page, t) => Buffer.from((await page.evaluate((t) => window.
       const a = w * per, b = Math.min(N, a + per);
       const page = await openPage(browser, port);
       const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(FPS), '-c:v', 'mjpeg', '-i', '-',
-        '-c:v', 'libx264', '-preset', 'medium', '-crf', '17', '-pix_fmt', 'yuv420p', path.join(ROOT, 'build', `part${w}.mp4`)], { stdio: ['pipe', 'inherit', 'inherit'] });
+        '-c:v', 'libx264', '-preset', 'medium', '-crf', '17', '-pix_fmt', 'yuv420p', path.join(ROOT, BUILD, `part${w}.mp4`)], { stdio: ['pipe', 'inherit', 'inherit'] });
       for (let f = a; f < b; f++) {
         const buf = await frame(page, f / FPS);
         if (!ff.stdin.write(buf)) await new Promise((r) => ff.stdin.once('drain', r));
@@ -69,8 +74,8 @@ const frame = async (page, t) => Buffer.from((await page.evaluate((t) => window.
       ff.stdin.end();
       await new Promise((r) => ff.on('close', r));
     }));
-    fs.writeFileSync(path.join(ROOT, 'build', 'parts.txt'), [...Array(WORKERS).keys()].map((w) => `file 'part${w}.mp4'`).join('\n'));
-    await new Promise((r) => spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', path.join(ROOT, 'build', 'parts.txt'), '-c', 'copy', path.join(ROOT, 'build', 'silent.mp4')], { stdio: 'inherit' }).on('close', r));
+    fs.writeFileSync(path.join(ROOT, BUILD, 'parts.txt'), [...Array(WORKERS).keys()].map((w) => `file 'part${w}.mp4'`).join('\n'));
+    await new Promise((r) => spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', path.join(ROOT, BUILD, 'parts.txt'), '-c', 'copy', path.join(ROOT, BUILD, 'silent.mp4')], { stdio: 'inherit' }).on('close', r));
     console.log('done in', ((Date.now() - tStart) / 1000).toFixed(0), 's');
   }
   await browser.close();

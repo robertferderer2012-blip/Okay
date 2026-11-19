@@ -22,3 +22,16 @@ python3 mix.py audio/take2.mp3      # voice + beat + SFX -> money_10k_1month.mp4
 `audio/take1.mp3` is the second ElevenLabs take; pass it to `mix.py` to use it instead (timings were cut to take2).
 
 Files: `billtex.js` (procedural bill / strap textures), `scene.js` (3D scenes, camera, captions, timeline), `render.js` (headless Chromium + ffmpeg), `mix.py` (audio).
+
+---
+
+# Video 2: $10K in 1 month reselling AirPods (`airpods.html`)
+
+About 57 s, same voice (Liam, eleven_v4, `audio/airpods_take1.mp3`; a second take is `airpods_take2.mp3`). It features a 3D earbuds case with an opening lid, a stylized photographer in an orange hoodie who shoots the product with a phone next to a ring light, and a live "product photo" rendered from a second camera into the polaroid and listing card.
+
+Script: buy used/open-box locally (~$120), check serial, sound, battery and pairing (never buy or sell fakes), clean and photograph, list for ~$170 (= $50 profit), $10,000 ÷ $50 = 200 pairs ≈ 7 a day, reinvest and buy in bulk.
+
+```bash
+PAGE=airpods.html BUILD=build_airpods node render.js
+python3 mix.py audio/airpods_take1.mp3 cues_airpods.json
+```
